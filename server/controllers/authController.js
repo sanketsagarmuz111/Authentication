@@ -4,6 +4,32 @@ import userModel from "../models/userModel.js";
 import transporter from "../config/nodemailer.js";
 import {EMAIL_VERIFY_TEMPLATE, PASSWORD_RESET_TEMPLATE} from "../config/emailTemplates.js"
 
+const getEmailErrorMessage = (error) => {
+  const providerMessage = `${error?.message || ""} ${error?.response || ""}`;
+
+  if (
+    error?.code === "EAUTH" ||
+    error?.responseCode === 535 ||
+    providerMessage.includes("535") ||
+    providerMessage.toLowerCase().includes("invalid login")
+  ) {
+    return "Email service authentication failed. Please check SMTP_USER and SMTP_PASS in server/.env.";
+  }
+
+  return "Email could not be sent. Please try again later.";
+};
+
+const sendAppEmail = async (mailOptions) => {
+  try {
+    await transporter.sendMail(mailOptions);
+  } catch (error) {
+    const message = getEmailErrorMessage(error);
+    const mailError = new Error(message);
+    mailError.cause = error;
+    throw mailError;
+  }
+};
+
 export const register = async (req, res) => {
 
   const { name, email, password } = req.body;
@@ -40,11 +66,19 @@ export const register = async (req, res) => {
         text: `Welcome to Sanket's Authentication demo web application.Your account is created with email id : ${email}`
     }
 
-    await transporter.sendMail(mailOptions)
+    try {
+      await sendAppEmail(mailOptions);
+    } catch (error) {
+      console.error("Welcome email failed:", error.message);
+    }
 
-    return res.json({success:true})
+    return res.json({success:true, message:"Account created successfully"})
 
   } catch (error) {
+    if (error?.code === 11000) {
+      return res.json({ success: false, message: "User already exists" });
+    }
+
     return res.json({ success: false, message: error.message });
   }
 };
@@ -100,9 +134,13 @@ export const logout = async (req,res) => {
 // send verification OTP to the User's Email
 export const sendVerifyOtp = async(req,res)=>{
     try{
-        const {userId} = req.body
+        const userId = req.userId || req.body.userId
 
         const user = await userModel.findById(userId)
+
+        if(!user){
+            return res.json({success:false,message:"User not found"})
+        }
 
         if(user.isAccountVerified){
             return res.json({success:false,message:"Account Already verified"})
@@ -112,8 +150,6 @@ export const sendVerifyOtp = async(req,res)=>{
         user.verifyOtp = otp;
         user.verifyOtpExpireAt = Date.now() + 24 * 60 * 60 * 1000
 
-        await user.save()
-
         const mailOption = { 
             from: process.env.SENDER_EMAIL,
             to: user.email,
@@ -122,7 +158,8 @@ export const sendVerifyOtp = async(req,res)=>{
             html: EMAIL_VERIFY_TEMPLATE.replace("{{otp}}",otp).replace("{{email}}",user.email)
         }
 
-        await transporter.sendMail(mailOption)
+        await sendAppEmail(mailOption)
+        await user.save()
 
         res.json({success:true,message:"Verification OTP sent on Email"})
 
@@ -133,7 +170,8 @@ export const sendVerifyOtp = async(req,res)=>{
 
 // Verify the email using OTP
 export const verifyEmail = async (req,res)=>{
-    const {userId, otp} = req.body
+    const userId = req.userId || req.body.userId
+    const {otp} = req.body
 
     if(!userId || !otp){
         return res.json({success:false,message:"Missing Details"});
@@ -190,11 +228,6 @@ export const sendResetOtp = async (req,res)=>{
         }
 
         const otp = (Math.floor(100000 + Math.random()* 900000)).toString()
-        user.resetOtp = otp;
-        user.resetOtpExpireAt = Date.now() + 15 * 60 * 1000
-
-        await user.save()
-
         const mailOption = {
             from: process.env.SENDER_EMAIL,
             to: user.email,
@@ -202,7 +235,11 @@ export const sendResetOtp = async (req,res)=>{
             // text: `Your OTP for resetting your password is ${otp}.Use this OTP to proceed with resetting your password.`
             html: PASSWORD_RESET_TEMPLATE.replace("{{otp}}",otp).replace("{{email}}",user.email)
         }
-        await transporter.sendMail(mailOption)
+        await sendAppEmail(mailOption)
+
+        user.resetOtp = otp;
+        user.resetOtpExpireAt = Date.now() + 15 * 60 * 1000
+        await user.save()
 
         return res.json({success:true,message:"OTP sent to your email."})
 
