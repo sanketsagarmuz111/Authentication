@@ -38,6 +38,10 @@ const getEmailErrorMessage = (error) => {
 };
 
 const sendAppEmail = async (mailOptions) => {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS || !process.env.SENDER_EMAIL) {
+    throw new Error("Email service is not configured. Please set SMTP_USER, SMTP_PASS, and SENDER_EMAIL.");
+  }
+
   try {
     await transporter.sendMail(mailOptions);
   } catch (error) {
