@@ -1,43 +1,47 @@
-import React, { useContext, useState } from 'react'
-import axios from "axios"
+import { useContext, useState } from 'react'
 import { assets } from '../assets/assets'
 import { useNavigate } from 'react-router-dom'
 import { AppContext } from '../context/AppContext'
 import { toast } from 'react-toastify'
+import api from '../lib/api'
+import LoadingButton from '../components/LoadingButton'
 
 const Login = () => {
 
   const navigate = useNavigate()
 
-  const {backendUrl, setIsLoggedin, getUserData} = useContext(AppContext)
+  const {setIsLoggedin, setUserData} = useContext(AppContext)
 
   const [state, setState] = useState('Sign Up')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const onSubmitHandler = async(e) =>{
+    e.preventDefault()
+    if (isSubmitting) return
+
     try {
-      e.preventDefault() 
-      axios.defaults.withCredentials = true
+      setIsSubmitting(true)
 
       if(state === 'Sign Up'){
-        const {data} = await axios.post(backendUrl + '/api/auth/register' , {name,email,password})
+        const {data} = await api.post('/api/auth/register' , {name,email,password})
 
         if(data.success){
           setIsLoggedin(true)
-          getUserData()
+          setUserData(data.userData)
           navigate('/')
         } 
         else{
           toast.error(data.message)
         }
       }else{
-        const {data} = await axios.post(backendUrl + '/api/auth/login' , {email,password})
+        const {data} = await api.post('/api/auth/login' , {email,password})
 
         if(data.success){
           setIsLoggedin(true)
-          getUserData()
+          setUserData(data.userData)
           navigate('/')
         } 
         else{
@@ -46,6 +50,8 @@ const Login = () => {
       }
     } catch (error) {
       toast.error(error.message)
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -93,7 +99,7 @@ const Login = () => {
           :
           <p></p>  }
 
-          <button type='submit' className='w-full py-2.5 rounded-full bg-gradient-to-r from-green-400 to-green-800 text-white font-medium'>{state}</button>
+          <LoadingButton type='submit' isLoading={isSubmitting} loadingText={state === 'Sign Up' ? 'Creating...' : 'Logging in...'} className='w-full py-2.5 rounded-full bg-gradient-to-r from-green-400 to-green-800 text-white font-medium'>{state}</LoadingButton>
         </form>
 
         {state === "Sign Up" ? (
@@ -102,7 +108,7 @@ const Login = () => {
             <span onClick={()=> setState("Login")} className='ml-1 text-green-400 cursor-pointer underline'>Login here</span>
           </p>
         ):(
-          <p className='text-gray-400 text-center text-xs mt-4'>Don't have an account?
+          <p className='text-gray-400 text-center text-xs mt-4'>Don&apos;t have an account?
            <span onClick={()=> setState("Sign Up")} className='ml-1 text-green-400 cursor-pointer underline'>Sign Up</span>
           </p>
         )}

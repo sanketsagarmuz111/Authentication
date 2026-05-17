@@ -1,16 +1,17 @@
-import React, { useContext, useEffect, useRef } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 import { assets } from '../assets/assets'
-import axios from 'axios'
 import { AppContext } from '../context/AppContext'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'react-toastify'
+import api from '../lib/api'
+import LoadingButton from '../components/LoadingButton'
 
 const EmailVerify = () => {
 
-  axios.defaults.withCredentials = true
-  const {backendUrl, isLoggedin, userData, getUserData} = useContext(AppContext)
+  const {isLoggedin, userData, getUserData} = useContext(AppContext)
   const inputRefs = useRef([])
   const navigate = useNavigate()
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleInput = (e, index) =>{
     if(e.target.value.length > 0 && index < inputRefs.current.length - 1){
@@ -35,15 +36,18 @@ const EmailVerify = () => {
   }
 
   const onsubmitHandle = async(e)=>{
+    e.preventDefault()
+    if (isSubmitting) return
+
     try {
-      e.preventDefault()
+      setIsSubmitting(true)
       const otpArray = inputRefs.current.map(e => e.value)
       const otp = otpArray.join('')
 
-      const {data} = await axios.post(backendUrl+'/api/auth/verify-account', {otp})
+      const {data} = await api.post('/api/auth/verify-account', {otp})
       if(data.success){
         toast.success(data.message)
-        getUserData()
+        await getUserData({ showError: false })
         navigate('/')
       }
       else{
@@ -51,12 +55,14 @@ const EmailVerify = () => {
       }
     } catch (error) {
       toast.error(error.message)
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
   useEffect(()=>{
     isLoggedin && userData && userData.isAccountVerified && navigate('/')
-  },[isLoggedin, userData])
+  },[isLoggedin, navigate, userData])
 
   return (
     <div className='flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-200 to-green-400'>
@@ -77,7 +83,7 @@ const EmailVerify = () => {
             />
           ))}
         </div>
-        <button className='w-full py-3 bg-gradient-to-r from-green-400 to-green-800 text-white rounded-full'>Verify email</button>
+        <LoadingButton type='submit' isLoading={isSubmitting} loadingText='Verifying...' className='w-full py-3 bg-gradient-to-r from-green-400 to-green-800 text-white rounded-full'>Verify email</LoadingButton>
       </form>
     </div>
   )

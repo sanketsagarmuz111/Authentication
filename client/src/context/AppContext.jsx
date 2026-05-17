@@ -1,51 +1,52 @@
-import axios from "axios";
-import { createContext, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "react-toastify";
+import api from "../lib/api";
+import { AppContext } from "./AppContext";
 
-export const AppContext = createContext();
-
-export const AppContextProvider = (props) => {
-  axios.defaults.withCredentials = true;
-
-  const backendUrl = import.meta.env.VITE_BACKEND_URL;
+export const AppContextProvider = ({ children }) => {
   const [isLoggedin, setIsLoggedin] = useState(false);
   const [userData, setUserData] = useState(false);
 
-  const getAuthState = async () => {
+  const backendUrl = api.defaults.baseURL;
+
+  const getUserData = useCallback(async ({ showError = true } = {}) => {
     try {
-      const { data } = await axios.get(backendUrl + "/api/auth/is-auth");
+      const { data } = await api.get("/api/user/data");
+
       if (data.success) {
         setIsLoggedin(true);
-        getUserData();
+        setUserData(data.userData);
+        return data.userData;
       }
-    } catch (error) {
-      toast.error(error.message);
-    }
-  };
 
-  const getUserData = async () => {
-    try {
-      const { data } = await axios.get(backendUrl + "/api/user/data");
-      data.success ? setUserData(data.userData) : toast.error(data.message);
+      setIsLoggedin(false);
+      setUserData(false);
+      if (showError && data.message !== "Not Authorized Login Again") {
+        toast.error(data.message);
+      }
+      return false;
     } catch (error) {
-      toast.error(error.message);
+      setIsLoggedin(false);
+      setUserData(false);
+      if (showError) toast.error(error.message);
+      return false;
     }
-  };
-
-  useEffect(() => {
-    getAuthState();
   }, []);
 
-  const value = {
+  useEffect(() => {
+    getUserData({ showError: false });
+  }, [getUserData]);
+
+  const value = useMemo(() => ({
     backendUrl,
     isLoggedin,
     setIsLoggedin,
     userData,
     setUserData,
     getUserData,
-  };
+  }), [backendUrl, getUserData, isLoggedin, userData]);
 
   return (
-    <AppContext.Provider value={value}>{props.children}</AppContext.Provider>
+    <AppContext.Provider value={value}>{children}</AppContext.Provider>
   );
 };

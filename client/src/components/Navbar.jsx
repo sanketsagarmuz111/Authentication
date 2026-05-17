@@ -1,20 +1,24 @@
-import React, { useContext } from 'react'
+import { useContext, useState } from 'react'
 import {assets} from "../assets/assets"
 import { useNavigate } from 'react-router-dom'
 import { AppContext } from '../context/AppContext'
-import axios from 'axios'
 import { toast } from 'react-toastify'
+import api from '../lib/api'
+import LoadingButton from './LoadingButton'
 
 const Navbar = () => {
 
     const navigate = useNavigate()
-    const {userData, backendUrl, setUserData, setIsLoggedin} = useContext(AppContext)
+    const {userData, setUserData, setIsLoggedin} = useContext(AppContext)
+    const [loadingAction, setLoadingAction] = useState('')
 
     const sendVerificationOtp = async()=>{
-      try {
-        axios.defaults.withCredentials = true
+      if (loadingAction) return
 
-        const {data} = await axios.post(backendUrl+'/api/auth/send-verify-otp')
+      try {
+        setLoadingAction('verify')
+
+        const {data} = await api.post('/api/auth/send-verify-otp')
 
         if(data.success){
           navigate('/email-verify')
@@ -25,19 +29,25 @@ const Navbar = () => {
         }
       } catch (error) {
         toast.error(error.message)
+      } finally {
+        setLoadingAction('')
       }
     }
 
     const logout = async() =>{
+      if (loadingAction) return
+
       try {
-        axios.defaults.withCredentials = true
-        const {data} = await axios.post(backendUrl+'/api/auth/logout')
+        setLoadingAction('logout')
+        const {data} = await api.post('/api/auth/logout')
         data.success && setIsLoggedin(false)
         data.success && setUserData(false)
         navigate('/')
 
       } catch (error) {
         toast.error(error.message)
+      } finally {
+        setLoadingAction('')
       }
     }
 
@@ -53,16 +63,24 @@ const Navbar = () => {
         <div className='absolute hidden group-hover:block top-0 right-0 z-10 text-black rounded pt-12'>
           <ul className='list-none m-0 p-2 bg-gray-100 text-sm'>
             {!userData.isAccountVerified && 
-            <li onClick={sendVerificationOtp} className='py-1 px-2 hover:bg-green-200 cursor-pointer'>Verify email</li>
+            <li>
+              <button onClick={sendVerificationOtp} disabled={Boolean(loadingAction)} className='w-full py-1 px-2 text-left hover:bg-green-200 disabled:cursor-not-allowed disabled:opacity-70'>
+                {loadingAction === 'verify' ? 'Sending...' : 'Verify email'}
+              </button>
+            </li>
             }     
-            <li onClick={logout} className='py-1 px-2 hover:bg-green-200 cursor-pointer pr-10'>Logout</li>
+            <li>
+              <button onClick={logout} disabled={Boolean(loadingAction)} className='w-full py-1 px-2 pr-10 text-left hover:bg-green-200 disabled:cursor-not-allowed disabled:opacity-70'>
+                {loadingAction === 'logout' ? 'Logging out...' : 'Logout'}
+              </button>
+            </li>
           </ul>
         </div>
       </div>
       :
-      <button onClick={()=>navigate("/login")} className='flex items-center gap-2 border border-green-500 rounded-full px-6 py-2 text-green-800 hover:bg-green-100 transition-all'>Login 
+      <LoadingButton onClick={()=>navigate("/login")} className='flex items-center gap-2 border border-green-500 rounded-full px-6 py-2 text-green-800 hover:bg-green-100 transition-all'>Login 
         <img src={assets.arrow_icon} alt="" />
-      </button>
+      </LoadingButton>
       }
     </div>
   )

@@ -1,6 +1,7 @@
-import React, { useContext } from 'react'
+import { useContext } from 'react'
 import { assets } from '../assets/assets'
 import { AppContext } from '../context/AppContext'
+import LoadingButton from './LoadingButton'
  
 const Header = () => {
 
@@ -16,9 +17,9 @@ const Header = () => {
 
       <h2 className='text-3xl sm:text-5xl text-green-500 font-semibold mb-4'>Welcome to our auth</h2>
 
-      <p className='mb-8 max-w-md'>Let's start with a quick product tour and we will have you up and running in no time!</p>
+      <p className='mb-8 max-w-md'>Let&apos;s start with a quick product tour and we will have you up and running in no time!</p>
 
-      <button className='border border-green-500 rounded-full px-8 py-2.5 hover:bg-green-100 transition-all'>Get Started</button>
+      <LoadingButton className='border border-green-500 rounded-full px-8 py-2.5 hover:bg-green-100 transition-all'>Get Started</LoadingButton>
     </div>
   )
 }

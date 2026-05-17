@@ -1,8 +1,26 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { randomInt } from "crypto";
 import userModel from "../models/userModel.js";
 import transporter from "../config/nodemailer.js";
 import {EMAIL_VERIFY_TEMPLATE, PASSWORD_RESET_TEMPLATE} from "../config/emailTemplates.js"
+
+const cookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
+
+const createOtp = () => randomInt(100000, 1000000).toString();
+
+const setAuthCookie = (res, userId) => {
+  const token = jwt.sign({ id: userId }, process.env.JWT_SECRET, {
+    expiresIn: "7d",
+  });
+
+  res.cookie("token", token, cookieOptions);
+};
 
 const getEmailErrorMessage = (error) => {
   const providerMessage = `${error?.message || ""} ${error?.response || ""}`;
@@ -39,40 +57,39 @@ export const register = async (req, res) => {
   }
  
   try {
-    const existingUser = await userModel.findOne({email})
+    const normalizedEmail = email.trim().toLowerCase()
+    const existingUser = await userModel.findOne({email: normalizedEmail}).select("_id").lean()
 
     if(existingUser){
         return res.json({success:false,message:"User already exists"})
     }
     const hashedPassword = await bcrypt.hash(password, 10)
 
-    const user = new userModel({name, email, password:hashedPassword})
+    const user = new userModel({name, email: normalizedEmail, password:hashedPassword})
     await user.save()
 
-    const token = jwt.sign({id:user._id}, process.env.JWT_SECRET, {expiresIn:'7d'})
-
-    res.cookie('token',token ,{
-        httpOnly:true,
-        secure: process.env.NODE_ENV === 'production', 
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
-        maxAge: 7 * 24 * 60 * 60 * 1000, 
-    })
+    setAuthCookie(res, user._id)
 
     // sending welcome email 
     const mailOptions = {
         from: process.env.SENDER_EMAIL,
-        to: email,
+        to: normalizedEmail,
         subject: 'Welcome to Subharti',
-        text: `Welcome to Sanket's Authentication demo web application.Your account is created with email id : ${email}`
+        text: `Welcome to Sanket's Authentication demo web application.Your account is created with email id : ${normalizedEmail}`
     }
 
-    try {
-      await sendAppEmail(mailOptions);
-    } catch (error) {
+    sendAppEmail(mailOptions).catch((error) => {
       console.error("Welcome email failed:", error.message);
-    }
+    });
 
-    return res.json({success:true, message:"Account created successfully"})
+    return res.json({
+      success: true,
+      message: "Account created successfully",
+      userData: {
+        name: user.name,
+        isAccountVerified: user.isAccountVerified,
+      },
+    })
 
   } catch (error) {
     if (error?.code === 11000) {
@@ -90,7 +107,7 @@ export const login = async(req,res)=>{
         return res.json({success:false,message:"email and password is required"})
     }
     try {
-        const user = await userModel.findOne({email});
+        const user = await userModel.findOne({email: email.trim().toLowerCase()}).select("_id name password isAccountVerified");
 
         if(!user){
             return res.json({success:false,message:"Invalid Email"})
@@ -100,16 +117,15 @@ export const login = async(req,res)=>{
         if(!isMatch){
             return res.json({success:false,message:"Invalid Password"})
         }
-        const token = jwt.sign({id:user._id}, process.env.JWT_SECRET, {expiresIn:'7d'})
+        setAuthCookie(res, user._id)
 
-        res.cookie('token',token ,{
-            httpOnly:true,
-            secure: process.env.NODE_ENV === 'production', 
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
-            maxAge: 7 * 24 * 60 * 60 * 1000, 
+        return res.json({
+          success: true,
+          userData: {
+            name: user.name,
+            isAccountVerified: user.isAccountVerified,
+          },
         })
-
-        return res.json({success:true})
 
     } catch (error) {
         return res.json({success:false,message:error.message})
@@ -119,9 +135,9 @@ export const login = async(req,res)=>{
 export const logout = async (req,res) => {
     try {
         res.clearCookie('token', {
-            httpOnly:true,
-            secure: process.env.NODE_ENV === 'production', 
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+            httpOnly: cookieOptions.httpOnly,
+            secure: cookieOptions.secure,
+            sameSite: cookieOptions.sameSite,
         })
 
         return res.json({success:true,message:"Logged Out"})
@@ -134,9 +150,9 @@ export const logout = async (req,res) => {
 // send verification OTP to the User's Email
 export const sendVerifyOtp = async(req,res)=>{
     try{
-        const userId = req.userId || req.body.userId
+        const userId = req.userId
 
-        const user = await userModel.findById(userId)
+        const user = await userModel.findById(userId).select("email verifyOtp verifyOtpExpireAt isAccountVerified")
 
         if(!user){
             return res.json({success:false,message:"User not found"})
@@ -146,7 +162,7 @@ export const sendVerifyOtp = async(req,res)=>{
             return res.json({success:false,message:"Account Already verified"})
         }
 
-        const otp = (Math.floor(100000 + Math.random()* 900000)).toString()
+        const otp = createOtp()
         user.verifyOtp = otp;
         user.verifyOtpExpireAt = Date.now() + 24 * 60 * 60 * 1000
 
@@ -158,8 +174,8 @@ export const sendVerifyOtp = async(req,res)=>{
             html: EMAIL_VERIFY_TEMPLATE.replace("{{otp}}",otp).replace("{{email}}",user.email)
         }
 
-        await sendAppEmail(mailOption)
         await user.save()
+        await sendAppEmail(mailOption)
 
         res.json({success:true,message:"Verification OTP sent on Email"})
 
@@ -170,14 +186,14 @@ export const sendVerifyOtp = async(req,res)=>{
 
 // Verify the email using OTP
 export const verifyEmail = async (req,res)=>{
-    const userId = req.userId || req.body.userId
+    const userId = req.userId
     const {otp} = req.body
 
     if(!userId || !otp){
         return res.json({success:false,message:"Missing Details"});
     }
     try {
-        const user = await userModel.findById(userId)
+        const user = await userModel.findById(userId).select("verifyOtp verifyOtpExpireAt isAccountVerified")
 
         if(!user){
             return res.json({success:false,message:"User not found"});
@@ -222,12 +238,12 @@ export const sendResetOtp = async (req,res)=>{
     }
 
     try {
-        const user = await userModel.findOne({email})
+        const user = await userModel.findOne({email: email.trim().toLowerCase()}).select("email resetOtp resetOtpExpireAt")
         if(!user){
             return res.json({success:false,message:"User not found"})
         }
 
-        const otp = (Math.floor(100000 + Math.random()* 900000)).toString()
+        const otp = createOtp()
         const mailOption = {
             from: process.env.SENDER_EMAIL,
             to: user.email,
@@ -235,11 +251,10 @@ export const sendResetOtp = async (req,res)=>{
             // text: `Your OTP for resetting your password is ${otp}.Use this OTP to proceed with resetting your password.`
             html: PASSWORD_RESET_TEMPLATE.replace("{{otp}}",otp).replace("{{email}}",user.email)
         }
-        await sendAppEmail(mailOption)
-
         user.resetOtp = otp;
         user.resetOtpExpireAt = Date.now() + 15 * 60 * 1000
         await user.save()
+        await sendAppEmail(mailOption)
 
         return res.json({success:true,message:"OTP sent to your email."})
 
@@ -257,7 +272,7 @@ export const resetPassword = async(req,res)=>{
     }
 
     try {
-        const user = await userModel.findOne({email})
+        const user = await userModel.findOne({email: email.trim().toLowerCase()}).select("password resetOtp resetOtpExpireAt")
         if(!user){
             return res.json({success:false,message:"User not found"})
         }

@@ -1,15 +1,11 @@
-import React, { useContext, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { assets } from '../assets/assets'
 import { useNavigate } from 'react-router-dom'
-import { AppContext } from '../context/AppContext'
-import axios from 'axios'
 import { toast } from 'react-toastify'
+import api from '../lib/api'
+import LoadingButton from '../components/LoadingButton'
 
 const ResetPassword = () => {
-
-  const {backendUrl} = useContext(AppContext)
-
-  axios.defaults.withCredentials = true
 
   const navigate = useNavigate()
   const inputRefs = useRef([])
@@ -18,6 +14,7 @@ const ResetPassword = () => {
   const [isEmailSent, setIsEmailSent] = useState('')
   const [otp, setOtp] = useState('')
   const [isOtpSubmited, setIsOtpSubmited] = useState(false)
+  const [loadingStep, setLoadingStep] = useState('')
 
   const handleInput = (e, index) =>{
     if(e.target.value.length > 0 && index < inputRefs.current.length - 1){
@@ -43,12 +40,17 @@ const ResetPassword = () => {
 
   const onSubmitEmail = async(e)=>{
     e.preventDefault()
+    if (loadingStep) return
+
     try {
-      const {data} = await axios.post(backendUrl+'/api/auth/send-reset-otp',{email})
+      setLoadingStep('email')
+      const {data} = await api.post('/api/auth/send-reset-otp',{email})
       data.success ? toast.success(data.message) : toast.error(data.message)
       data.success && setIsEmailSent(true)
     } catch (error) {
       toast.error(error.message)
+    } finally {
+      setLoadingStep('')
     }
   }
 
@@ -61,12 +63,17 @@ const ResetPassword = () => {
 
   const onSubmitNewPassword = async(e) =>{
     e.preventDefault()
+    if (loadingStep) return
+
     try {
-      const {data} = await axios.post(backendUrl+'/api/auth/reset-password',{email,otp,newPassword})
+      setLoadingStep('password')
+      const {data} = await api.post('/api/auth/reset-password',{email,otp,newPassword})
       data.success ? toast.success(data.message) : toast.error(data.message)
       data.success && navigate('/login')
     } catch (error) {
       toast.error(error.message)
+    } finally {
+      setLoadingStep('')
     }
   }
   return (
@@ -86,7 +93,7 @@ const ResetPassword = () => {
           <img src={assets.mail_icon} className='w-3 h-3' />
           <input type="email" placeholder='Email Id' className='bg-transparent w-full outline-none text-green-300' value={email} onChange={(e)=>setEmail(e.target.value)} required />
         </div>
-        <button className='w-full py-3 bg-gradient-to-r from-green-400 to-green-800 text-white rounded-full' >Submit</button>
+        <LoadingButton type='submit' isLoading={loadingStep === 'email'} loadingText='Sending...' className='w-full py-3 bg-gradient-to-r from-green-400 to-green-800 text-white rounded-full' >Submit</LoadingButton>
       </form>
       }
 
@@ -109,7 +116,7 @@ const ResetPassword = () => {
             />
           ))}
         </div>
-        <button className='w-full py-2.5 bg-gradient-to-r from-green-400 to-green-800 text-white rounded-full'>Submit</button>
+        <LoadingButton type='submit' className='w-full py-2.5 bg-gradient-to-r from-green-400 to-green-800 text-white rounded-full'>Submit</LoadingButton>
       </form>
 
       }
@@ -127,7 +134,7 @@ const ResetPassword = () => {
           <img src={assets.lock_icon} className='w-3 h-3' />
           <input type="password" placeholder='Password' className='bg-transparent outline-none text-green-300' value={newPassword} onChange={(e)=>setNewPassword(e.target.value)} required />
         </div>
-        <button className='w-full py-3 bg-gradient-to-r from-green-400 to-green-800 text-white rounded-full' >Submit</button>
+        <LoadingButton type='submit' isLoading={loadingStep === 'password'} loadingText='Resetting...' className='w-full py-3 bg-gradient-to-r from-green-400 to-green-800 text-white rounded-full' >Submit</LoadingButton>
       </form>
       }
     </div>
